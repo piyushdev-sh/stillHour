@@ -17,7 +17,7 @@ import BrandWordmark from '../common/BrandWordmark';
 
 export default function Sidebar() {
   const { currentView, setCurrentView } = useNavigation();
-  const { syncStatus } = useAppData();
+  const { syncStatus, cloudConfigured, isSyncing } = useAppData();
 
   const navItems = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
@@ -69,20 +69,22 @@ export default function Sidebar() {
 
       {/* Footer Info & Controls */}
       <div className="pt-4 border-t border-cream-200 dark:border-charcoal-750 space-y-4">
-        {/* Offline / Sync State indicator */}
+        {/* Offline / Cloud State indicator */}
         <div className="flex items-center justify-between px-3 py-2 rounded-xl bg-cream-50 dark:bg-charcoal-850 border border-cream-200/80 dark:border-charcoal-750 text-xs">
           <div className="flex items-center gap-2">
-            {syncStatus === 'synced' ? (
+            {cloudConfigured ? (
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+            ) : syncStatus === 'synced' ? (
               <CheckCircle2 className="w-3.5 h-3.5 text-sage-600 dark:text-sage-400" />
             ) : (
               <CloudOff className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
             )}
             <span className="text-espresso-600 dark:text-cream-300 font-medium">
-              {syncStatus === 'synced' ? 'IndexedDB active' : 'Offline local'}
+              {isSyncing ? 'Syncing...' : cloudConfigured ? 'All Devices Synced' : 'Offline local'}
             </span>
           </div>
           <span className="text-[10px] font-mono text-espresso-400 dark:text-cream-400">
-            Offline-first
+            {cloudConfigured ? 'Vercel KV' : 'Local'}
           </span>
         </div>
 

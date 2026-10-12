@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import {
   getAllFromStore,
   putToStore,
@@ -7,7 +7,13 @@ import {
   purgeExpiredRecycleBin,
   STORES,
 } from '../services/db';
-import { detectConflict, resolveConflictRecord, executeSync } from '../services/syncEngine';
+import {
+  detectConflict,
+  resolveConflictRecord,
+  executeSync,
+  fetchCloudDatabase,
+  pushFullCloudDatabase,
+} from '../services/syncEngine';
 
 const AppDataContext = createContext();
 
@@ -19,6 +25,7 @@ const STORAGE_KEYS = {
   SNAPSHOTS: 'stillhour_target_snapshots',
   BIN: 'stillhour_recycle_bin',
   SETTINGS: 'stillhour_settings',
+  LAST_SYNC: 'stillhour_last_cloud_sync',
 };
 
 export function AppDataProvider({ children }) {
@@ -54,7 +61,17 @@ export function AppDataProvider({ children }) {
   });
 
   const [syncStatus, setSyncStatus] = useState('synced');
+  const [cloudConfigured, setCloudConfigured] = useState(false);
+  const [lastSyncTime, setLastSyncTime] = useState(() => {
+    const saved = localStorage.getItem(STORAGE_KEYS.LAST_SYNC);
+    return saved ? new Date(saved) : null;
+  });
+  const [isSyncing, setIsSyncing] = useState(false);
   const [activeConflict, setActiveConflict] = useState(null);
+
+  // Keep ref of current state for network sync callbacks without stale closures
+  const stateRef = useRef({ subjects, tasks, sessions, templates, historicalSnapshots });
+  stateRef.current = { subjects, tasks, sessions, templates, historicalSnapshots };
 
   // Persistence to localStorage & IndexedDB
   useEffect(() => {
@@ -85,18 +102,130 @@ export function AppDataProvider({ children }) {
     localStorage.setItem(STORAGE_KEYS.BIN, JSON.stringify(recycleBinItems));
   }, [recycleBinItems]);
 
-  // Connectivity listener
+  // Cloud sync handler: merges remote data and pushes local changes
+  const syncWithCloud = async () => {
+    if (isSyncing) return;
+    setIsSyncing(true);
+
+    try {
+      // 1. Fetch remote cloud state from /api/sync (Vercel KV / Upstash)
+      const pullRes = await fetchCloudDatabase('/api/sync');
+
+      if (pullRes && pullRes.kvConfigured) {
+        setCloudConfigured(true);
+
+        if (pullRes.data) {
+          const remote = pullRes.data;
+
+          // Merge subjects: union by id, preferring newer updatedAt
+          if (Array.isArray(remote.subjects) && remote.subjects.length > 0) {
+            setSubjects((prev) => {
+              const map = new Map();
+              prev.forEach((s) => map.set(s.id, s));
+              remote.subjects.forEach((s) => {
+                const cur = map.get(s.id);
+                if (!cur || new Date(s.updatedAt || 0) >= new Date(cur.updatedAt || 0)) {
+                  map.set(s.id, s);
+                }
+              });
+              return Array.from(map.values());
+            });
+          }
+
+          // Merge tasks: union by id, preferring newer updatedAt
+          if (Array.isArray(remote.tasks) && remote.tasks.length > 0) {
+            setTasks((prev) => {
+              const map = new Map();
+              prev.forEach((t) => map.set(t.id, t));
+              remote.tasks.forEach((t) => {
+                const cur = map.get(t.id);
+                if (!cur || new Date(t.updatedAt || 0) >= new Date(cur.updatedAt || 0)) {
+                  map.set(t.id, t);
+                }
+              });
+              return Array.from(map.values());
+            });
+          }
+
+          // Merge sessions: union by id
+          if (Array.isArray(remote.sessions) && remote.sessions.length > 0) {
+            setSessions((prev) => {
+              const map = new Map();
+              prev.forEach((sess) => map.set(sess.id, sess));
+              remote.sessions.forEach((sess) => map.set(sess.id, sess));
+              return Array.from(map.values());
+            });
+          }
+
+          // Merge templates: union by id
+          if (Array.isArray(remote.templates) && remote.templates.length > 0) {
+            setTemplates((prev) => {
+              const map = new Map();
+              prev.forEach((tpl) => map.set(tpl.id, tpl));
+              remote.templates.forEach((tpl) => map.set(tpl.id, tpl));
+              return Array.from(map.values());
+            });
+          }
+
+          // Merge historical snapshots
+          if (remote.snapshots && typeof remote.snapshots === 'object') {
+            setHistoricalSnapshots((prev) => ({ ...prev, ...remote.snapshots }));
+          }
+        }
+
+        // 2. Push full current local state to ensure cloud has any local offline additions
+        const pushRes = await pushFullCloudDatabase({
+          apiUrl: '/api/sync',
+          fullState: stateRef.current,
+        });
+
+        if (pushRes && pushRes.success) {
+          const now = new Date();
+          setLastSyncTime(now);
+          localStorage.setItem(STORAGE_KEYS.LAST_SYNC, now.toISOString());
+          setSyncStatus('synced');
+        }
+      } else {
+        setCloudConfigured(false);
+        setSyncStatus('synced'); // local IndexedDB is synced
+      }
+    } catch (err) {
+      console.warn('Sync error:', err);
+      setSyncStatus('offline');
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  // Connectivity & Tab Focus listeners for seamless multi-device updates
   useEffect(() => {
+    // Initial sync on app launch
+    syncWithCloud();
+
     const handleOnline = () => {
       setSyncStatus('synced');
-      triggerManualSync();
+      syncWithCloud();
     };
+
     const handleOffline = () => {
       setSyncStatus('offline');
     };
 
+    // When user returns to StillHour tab/window on their laptop/phone
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        syncWithCloud();
+      }
+    };
+
+    const handleFocus = () => {
+      syncWithCloud();
+    };
+
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('focus', handleFocus);
 
     // Initial purge of items > 30 days
     const now = Date.now();
@@ -106,12 +235,38 @@ export function AppDataProvider({ children }) {
     return () => {
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('focus', handleFocus);
     };
   }, []);
 
+  // Debounced auto-push when data changes locally
+  useEffect(() => {
+    if (!cloudConfigured) return;
+
+    const timer = setTimeout(() => {
+      pushFullCloudDatabase({
+        apiUrl: '/api/sync',
+        fullState: stateRef.current,
+      })
+        .then((res) => {
+          if (res && res.success) {
+            const now = new Date();
+            setLastSyncTime(now);
+            localStorage.setItem(STORAGE_KEYS.LAST_SYNC, now.toISOString());
+            setSyncStatus('synced');
+          }
+        })
+        .catch(() => {});
+    }, 1200);
+
+    return () => clearTimeout(timer);
+  }, [subjects, tasks, sessions, templates, historicalSnapshots, cloudConfigured]);
+
   // Subject methods
   const addSubject = (newSub) => {
-    setSubjects((prev) => [...prev, newSub]);
+    const item = { ...newSub, updatedAt: new Date().toISOString() };
+    setSubjects((prev) => [...prev, item]);
   };
 
   const updateSubject = (id, updates) => {
@@ -146,7 +301,8 @@ export function AppDataProvider({ children }) {
 
   // Task methods
   const addTask = (newTask) => {
-    setTasks((prev) => [newTask, ...prev]);
+    const item = { ...newTask, updatedAt: new Date().toISOString() };
+    setTasks((prev) => [item, ...prev]);
   };
 
   const toggleTask = (id) => {
@@ -198,44 +354,33 @@ export function AppDataProvider({ children }) {
   };
 
   // Template methods
-  const saveTemplate = (newTemplate) => {
-    setTemplates((prev) => [...prev, newTemplate]);
+  const saveTemplate = (template) => {
+    setTemplates((prev) => {
+      const existingIdx = prev.findIndex((t) => t.id === template.id);
+      if (existingIdx >= 0) {
+        const copy = [...prev];
+        copy[existingIdx] = { ...template, updatedAt: new Date().toISOString() };
+        return copy;
+      }
+      return [...prev, { ...template, updatedAt: new Date().toISOString() }];
+    });
   };
 
   const deleteTemplate = (id) => {
     setTemplates((prev) => prev.filter((t) => t.id !== id));
+    softDeleteFromStore(STORES.TEMPLATES, id).catch(() => {});
   };
 
-  // Session methods with duplicate prevention
-  const addSession = (newSession) => {
+  // Session methods
+  const addSession = (session) => {
     setSessions((prev) => {
-      if (prev.some((s) => s.id === newSession.id)) {
-        return prev;
-      }
-      return [newSession, ...prev];
+      const exists = prev.some((s) => s.id === session.id);
+      if (exists) return prev;
+      return [session, ...prev];
     });
-
-    const sessDate = newSession.date || new Date().toISOString().slice(0, 10);
-    if (!historicalSnapshots[sessDate]) {
-      const activeTargets = {};
-      let total = 0;
-      subjects.forEach((s) => {
-        if (!s.archived) {
-          activeTargets[s.id] = s.dailyTargetMinutes || 0;
-          total += s.dailyTargetMinutes || 0;
-        }
-      });
-      setHistoricalSnapshots((prev) => ({
-        ...prev,
-        [sessDate]: {
-          totalTargetMinutes: total || 120,
-          subjectTargets: activeTargets,
-          recordedAt: new Date().toISOString(),
-        },
-      }));
-    }
   };
 
+  // Session correction within 15-min window
   const updateSession = (id, updates) => {
     setSessions((prev) =>
       prev.map((s) => {
@@ -251,33 +396,6 @@ export function AppDataProvider({ children }) {
         };
       })
     );
-  };
-
-  // Cloud sync trigger
-  const triggerManualSync = async () => {
-    try {
-      const mutations = [
-        ...subjects.map((s) => ({ action: 'UPSERT', storeName: 'subjects', entityId: s.id, payload: s })),
-        ...tasks.map((t) => ({ action: 'UPSERT', storeName: 'tasks', entityId: t.id, payload: t })),
-        ...sessions.map((sess) => ({ action: 'UPSERT', storeName: 'sessions', entityId: sess.id, payload: sess })),
-      ];
-
-      const res = await executeSync({
-        apiUrl: 'http://localhost:4000/api/sync',
-        localMutations: mutations,
-        lastSyncTimestamp: 0,
-      });
-
-      if (res.conflicts && res.conflicts.length > 0) {
-        setActiveConflict(res.conflicts[0]);
-        setSyncStatus('conflict');
-      } else {
-        setSyncStatus('synced');
-      }
-    } catch (e) {
-      // Fallback: local sync is active
-      setSyncStatus('synced');
-    }
   };
 
   // Conflict resolution handler
@@ -296,7 +414,6 @@ export function AppDataProvider({ children }) {
     setSyncStatus('synced');
   };
 
-  // Destructive reset with verification
   // Backup Restoration
   const restoreFromJSONBackup = (data) => {
     if (!data || typeof data !== 'object') {
@@ -322,6 +439,7 @@ export function AppDataProvider({ children }) {
     localStorage.removeItem(STORAGE_KEYS.TEMPLATES);
     localStorage.removeItem(STORAGE_KEYS.SNAPSHOTS);
     localStorage.removeItem(STORAGE_KEYS.BIN);
+    localStorage.removeItem(STORAGE_KEYS.LAST_SYNC);
   };
 
   return (
@@ -334,6 +452,9 @@ export function AppDataProvider({ children }) {
         historicalSnapshots,
         recycleBinItems,
         syncStatus,
+        cloudConfigured,
+        lastSyncTime,
+        isSyncing,
         activeConflict,
         addSubject,
         updateSubject,
@@ -348,7 +469,8 @@ export function AppDataProvider({ children }) {
         deleteTemplate,
         addSession,
         updateSession,
-        triggerManualSync,
+        syncWithCloud,
+        triggerManualSync: syncWithCloud,
         resolveConflict,
         restoreFromJSONBackup,
         resetAllData,

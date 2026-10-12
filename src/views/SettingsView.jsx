@@ -15,6 +15,7 @@ import {
   Trash2,
   RotateCcw,
   Cloud,
+  CloudOff,
   CheckCircle2,
   AlertTriangle,
 } from 'lucide-react';
@@ -23,6 +24,7 @@ import Button from '../components/common/Button';
 import ThemeToggle from '../components/common/ThemeToggle';
 import RecycleBinModal from '../components/sync/RecycleBinModal';
 import { useTheme } from '../context/ThemeContext';
+import { useAppData } from '../context/AppDataContext';
 
 export default function SettingsView({
   subjects = [],
@@ -35,6 +37,7 @@ export default function SettingsView({
   onManualSync,
 }) {
   const { theme, setTheme } = useTheme();
+  const { cloudConfigured, lastSyncTime, syncWithCloud } = useAppData();
 
   // Settings State
   const [weeklyTargetHours, setWeeklyTargetHours] = useState(15);
@@ -102,10 +105,15 @@ export default function SettingsView({
   };
 
   const handleSyncClick = async () => {
-    if (onManualSync) {
-      setIsSyncing(true);
-      await onManualSync();
-      setTimeout(() => setIsSyncing(false), 600);
+    setIsSyncing(true);
+    try {
+      if (syncWithCloud) {
+        await syncWithCloud();
+      } else if (onManualSync) {
+        await onManualSync();
+      }
+    } finally {
+      setTimeout(() => setIsSyncing(false), 500);
     }
   };
 
@@ -243,7 +251,7 @@ export default function SettingsView({
       <Card>
         <div className="flex items-center justify-between mb-1">
           <h4 className="font-medium text-base text-espresso-900 dark:text-cream-50">
-            Offline Storage & Cloud Sync
+            Multi-Device Cloud Sync & Storage
           </h4>
           <Button
             size="sm"
@@ -252,18 +260,46 @@ export default function SettingsView({
             onClick={handleSyncClick}
             disabled={isSyncing}
           >
-            {isSyncing ? 'Syncing...' : 'Sync Cloud'}
+            {isSyncing ? 'Syncing...' : 'Sync Cloud Now'}
           </Button>
         </div>
         <p className="text-xs text-espresso-500 dark:text-cream-400 mb-4">
-          All study data is persisted locally in IndexedDB first before sync attempts.
+          All study data is saved locally in IndexedDB first, and automatically synchronized across your devices via Vercel KV.
         </p>
 
         <div className="p-4 rounded-xl bg-cream-50 dark:bg-charcoal-900 border border-cream-200 dark:border-charcoal-750 space-y-3 mb-4">
           <div className="flex items-center justify-between text-xs">
-            <span className="text-espresso-700 dark:text-cream-300 font-medium">Local Database</span>
+            <span className="text-espresso-700 dark:text-cream-300 font-medium">Multi-Device Cloud Sync</span>
+            {cloudConfigured ? (
+              <span className="text-emerald-700 dark:text-emerald-400 font-medium flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                Active (Vercel KV)
+              </span>
+            ) : (
+              <span className="text-amber-700 dark:text-amber-400 font-medium flex items-center gap-1.5">
+                <CloudOff className="w-3.5 h-3.5" />
+                Local Only
+              </span>
+            )}
+          </div>
+
+          <div className="text-[11px] text-espresso-600 dark:text-cream-300 leading-relaxed">
+            {cloudConfigured
+              ? 'All of your devices (phones, tablets, laptops) share the exact same study sessions, subjects, and tasks automatically.'
+              : 'To sync across all devices, create a free Vercel KV database in the Vercel Dashboard under Storage -> Create Database -> KV, and connect it to stillHour.'}
+          </div>
+
+          {lastSyncTime && (
+            <div className="flex items-center justify-between text-[11px] text-espresso-400 dark:text-cream-400 pt-2 border-t border-cream-200/60 dark:border-charcoal-800 font-mono">
+              <span>Last Synchronized:</span>
+              <span>{new Date(lastSyncTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>
+            </div>
+          )}
+
+          <div className="flex items-center justify-between text-xs pt-1">
+            <span className="text-espresso-700 dark:text-cream-300 font-medium">Local Offline Engine</span>
             <span className="text-sage-600 dark:text-sage-400 font-medium flex items-center gap-1.5">
-              <CheckCircle2 className="w-3.5 h-3.5" /> IndexedDB Active (Offline-First)
+              <CheckCircle2 className="w-3.5 h-3.5" /> IndexedDB Active
             </span>
           </div>
 

@@ -98,3 +98,36 @@ export async function executeSync({
     };
   }
 }
+
+/**
+ * Fetches current cloud state from /api/sync
+ */
+export async function fetchCloudDatabase(apiUrl = '/api/sync') {
+  try {
+    const res = await fetch(apiUrl, { method: 'GET' });
+    if (!res.ok) return { success: false, error: `HTTP ${res.status}` };
+    const data = await res.json();
+    return data;
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+}
+
+/**
+ * Pushes full state to /api/sync for multi-device sync
+ */
+export async function pushFullCloudDatabase({ apiUrl = '/api/sync', fullState }) {
+  try {
+    const res = await fetch(apiUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ fullState }),
+    });
+    if (!res.ok) return { success: false, error: `HTTP ${res.status}` };
+    const data = await res.json();
+    return data;
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+}
+
