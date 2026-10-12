@@ -14,7 +14,80 @@ import SettingsView from './views/SettingsView';
 
 import TimerRecoveryModal from './components/timer/TimerRecoveryModal';
 import SwitchTimerConfirmModal from './components/timer/SwitchTimerConfirmModal';
-import ConflictResolutionModal from './components/sync/ConflictResolutionModal';
+
+// Cloud loading gate — shown while fetching data on first load
+function CloudLoadingGate({ children }) {
+  const { loadState, loadError } = useAppData();
+
+  if (loadState === 'loading') {
+    return (
+      <div style={{
+        position: 'fixed', inset: 0,
+        display: 'flex', flexDirection: 'column',
+        alignItems: 'center', justifyContent: 'center',
+        background: 'var(--color-bg, #FAF8F5)',
+        gap: '1rem',
+        fontFamily: 'inherit',
+      }}>
+        <svg width="48" height="48" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg"
+          style={{ animation: 'spin 2s linear infinite' }}>
+          <circle cx="24" cy="24" r="20" stroke="#D4C5B4" strokeWidth="3" />
+          <circle cx="24" cy="24" r="13" stroke="#B5A090" strokeWidth="2.5" />
+          <circle cx="24" cy="24" r="6" stroke="#8C6D52" strokeWidth="2" />
+          <circle cx="24" cy="24" r="2.5" fill="#4A3728" />
+        </svg>
+        <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
+        <p style={{ color: '#8C7B6A', fontSize: '0.875rem', margin: 0 }}>Loading your data…</p>
+      </div>
+    );
+  }
+
+  if (loadState === 'error') {
+    return (
+      <div style={{
+        position: 'fixed', inset: 0,
+        display: 'flex', flexDirection: 'column',
+        alignItems: 'center', justifyContent: 'center',
+        background: 'var(--color-bg, #FAF8F5)',
+        gap: '1rem',
+        fontFamily: 'inherit',
+        padding: '2rem',
+        textAlign: 'center',
+      }}>
+        <svg width="48" height="48" viewBox="0 0 48 48" fill="none">
+          <circle cx="24" cy="24" r="22" stroke="#C0392B" strokeWidth="2.5" />
+          <line x1="16" y1="16" x2="32" y2="32" stroke="#C0392B" strokeWidth="2.5" strokeLinecap="round" />
+          <line x1="32" y1="16" x2="16" y2="32" stroke="#C0392B" strokeWidth="2.5" strokeLinecap="round" />
+        </svg>
+        <p style={{ color: '#4A3728', fontSize: '1rem', fontWeight: 600, margin: 0 }}>
+          Could not connect to your data
+        </p>
+        <p style={{ color: '#8C7B6A', fontSize: '0.8rem', margin: 0, maxWidth: '28ch' }}>
+          {loadError === 'KV_NOT_CONFIGURED'
+            ? 'Vercel KV is not linked yet. Connect it in your Vercel dashboard → Storage.'
+            : `Error: ${loadError}`}
+        </p>
+        <button
+          onClick={() => window.location.reload()}
+          style={{
+            marginTop: '0.5rem',
+            padding: '0.5rem 1.25rem',
+            borderRadius: '6px',
+            border: 'none',
+            background: '#4A3728',
+            color: '#FAF8F5',
+            cursor: 'pointer',
+            fontSize: '0.875rem',
+          }}
+        >
+          Retry
+        </button>
+      </div>
+    );
+  }
+
+  return children;
+}
 
 function MainRouter() {
   const { currentView } = useNavigation();
@@ -24,7 +97,6 @@ function MainRouter() {
     sessions,
     recycleBinItems,
     syncStatus,
-    activeConflict,
     addSubject,
     updateSubject,
     archiveSubject,
@@ -40,7 +112,6 @@ function MainRouter() {
     addSession,
     updateSession,
     triggerManualSync,
-    resolveConflict,
     restoreFromJSONBackup,
     resetAllData,
   } = useAppData();
@@ -68,6 +139,7 @@ function MainRouter() {
             onAddSubject={addSubject}
             onUpdateSubject={updateSubject}
             onArchiveSubject={archiveSubject}
+            onDeleteSubject={deleteSubject}
           />
         )}
         {currentView === 'tasks' && (
@@ -105,28 +177,14 @@ function MainRouter() {
         )}
       </AppShell>
 
-      {/* Crash / Sleep Recovery Dialog */}
       {pendingRecovery && (
-        <TimerRecoveryModal
-          recoveryData={pendingRecovery}
-          onResolve={resolveRecovery}
-        />
+        <TimerRecoveryModal recoveryData={pendingRecovery} onResolve={resolveRecovery} />
       )}
-
-      {/* Switch Timer Confirmation Dialog */}
       {pendingSwitch && (
         <SwitchTimerConfirmModal
           pendingSwitch={pendingSwitch}
           onConfirm={confirmSwitch}
           onCancel={cancelSwitch}
-        />
-      )}
-
-      {/* Conflict Resolution Dialog (No Silent Overwrite) */}
-      {activeConflict && (
-        <ConflictResolutionModal
-          conflict={activeConflict}
-          onResolve={resolveConflict}
         />
       )}
     </>
@@ -139,7 +197,9 @@ export default function App() {
       <NavigationProvider>
         <AppDataProvider>
           <TimerProvider>
-            <MainRouter />
+            <CloudLoadingGate>
+              <MainRouter />
+            </CloudLoadingGate>
           </TimerProvider>
         </AppDataProvider>
       </NavigationProvider>
