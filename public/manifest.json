@@ -1,7 +1,7 @@
 {
-  "name": "stillhour — private study tracker",
-  "short_name": "stillhour",
-  "description": "A calm, private, offline-first study tracker for desktop and mobile.",
+  "name": "StillHour",
+  "short_name": "StillHour",
+  "description": "A calm, private focus timer for deep work.",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#FAF8F5",
