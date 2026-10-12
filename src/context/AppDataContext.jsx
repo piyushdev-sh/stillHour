@@ -2,8 +2,8 @@
  * AppDataContext.jsx
  * 
  * Single source of truth: Vercel KV (via /api/sync).
- * No IndexedDB. No localStorage. Every change is immediately written to the cloud.
- * On load the app fetches the current state from the cloud.
+ * Pure cloud storage without local caching or resurrection bugs.
+ * Deletion is immediate, authoritative, and synchronously saved to the cloud.
  */
 
 import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
@@ -11,7 +11,7 @@ import { cloudFetch, cloudSave } from '../services/cloudStore';
 
 const AppDataContext = createContext();
 
-// How long to debounce writes after a change (ms)
+// How long to debounce background writes for minor state changes (ms)
 const WRITE_DEBOUNCE_MS = 600;
 
 export function AppDataProvider({ children }) {
@@ -36,8 +36,12 @@ export function AppDataProvider({ children }) {
   const stateRef = useRef({});
   stateRef.current = { subjects, tasks, sessions, templates, historicalSnapshots, recycleBinItems };
 
+  // Timestamp of the most recent user action (prevents re-fetch race conditions)
+  const lastLocalActionRef = useRef(0);
+
   // Track whether initial load has finished so we don't write on first render
   const isLoadedRef = useRef(false);
+  const writeTimerRef = useRef(null);
 
   // ── Initial load from cloud ────────────────────────────────────────────
   useEffect(() => {
@@ -69,12 +73,21 @@ export function AppDataProvider({ children }) {
     return () => { cancelled = true; };
   }, []);
 
-  // Re-fetch when user returns to the tab / window
+  // Re-fetch when user returns to the tab (safely guarded against overwriting fresh actions)
   const refetchFromCloud = useCallback(async () => {
-    if (isSyncing) return;
+    // If saving right now or if the user performed an action within the last 3.5 seconds, DO NOT overwrite!
+    if (isSyncing || Date.now() - lastLocalActionRef.current < 3500) {
+      return;
+    }
+
     try {
       setIsSyncing(true);
       const data = await cloudFetch();
+      // Double check that user hasn't made a local change while network request was pending
+      if (Date.now() - lastLocalActionRef.current < 3500) {
+        return;
+      }
+
       setSubjects(           Array.isArray(data.subjects)    ? data.subjects   : []);
       setTasks(              Array.isArray(data.tasks)        ? data.tasks      : []);
       setSessions(           Array.isArray(data.sessions)     ? data.sessions   : []);
@@ -84,8 +97,7 @@ export function AppDataProvider({ children }) {
       setLastSaved(new Date());
       setSaveError(null);
     } catch (err) {
-      // Silently ignore — user is likely offline momentarily
-      console.warn('StillHour: cloud re-fetch failed:', err.message);
+      console.warn('StillHour: cloud re-fetch ignored:', err.message);
     } finally {
       setIsSyncing(false);
     }
@@ -93,19 +105,17 @@ export function AppDataProvider({ children }) {
 
   useEffect(() => {
     const handleVisibility = () => {
-      if (document.visibilityState === 'visible') refetchFromCloud();
+      if (document.visibilityState === 'visible') {
+        refetchFromCloud();
+      }
     };
     document.addEventListener('visibilitychange', handleVisibility);
-    window.addEventListener('focus', refetchFromCloud);
     return () => {
       document.removeEventListener('visibilitychange', handleVisibility);
-      window.removeEventListener('focus', refetchFromCloud);
     };
   }, [refetchFromCloud]);
 
-  // ── Debounced write to cloud ───────────────────────────────────────────
-  const writeTimerRef = useRef(null);
-
+  // ── Debounced write helper ─────────────────────────────────────────────
   const scheduleWrite = useCallback(() => {
     if (!isLoadedRef.current) return;
     clearTimeout(writeTimerRef.current);
@@ -124,28 +134,79 @@ export function AppDataProvider({ children }) {
     }, WRITE_DEBOUNCE_MS);
   }, []);
 
-  // Trigger a write whenever any data changes (after first load)
-  useEffect(() => { scheduleWrite(); }, [subjects, tasks, sessions, templates, historicalSnapshots, recycleBinItems]);
+  // Background sync for general changes
+  useEffect(() => {
+    scheduleWrite();
+  }, [sessions, templates, historicalSnapshots]);
 
   // ── Helper: stamp updatedAt ────────────────────────────────────────────
   const ts = () => new Date().toISOString();
 
   // ── Subject methods ────────────────────────────────────────────────────
-  const addSubject = (newSub) =>
-    setSubjects((prev) => [...prev, { ...newSub, updatedAt: ts() }]);
+  const addSubject = async (newSub) => {
+    lastLocalActionRef.current = Date.now();
+    clearTimeout(writeTimerRef.current);
 
-  const updateSubject = (id, updates) =>
-    setSubjects((prev) =>
-      prev.map((s) => s.id === id ? { ...s, ...updates, updatedAt: ts() } : s)
-    );
+    const item = { ...newSub, updatedAt: ts() };
+    const updatedSubjects = [...subjects, item];
+    setSubjects(updatedSubjects);
 
-  const archiveSubject = (id) =>
-    setSubjects((prev) =>
-      prev.map((s) => s.id === id ? { ...s, archived: !s.archived, updatedAt: ts() } : s)
-    );
+    try {
+      setIsSyncing(true);
+      await cloudSave({
+        subjects: updatedSubjects,
+        tasks,
+        sessions,
+        templates,
+        snapshots: historicalSnapshots,
+        recycleBin: recycleBinItems,
+      });
+      setLastSaved(new Date());
+    } catch (err) {
+      console.error('Failed to save added subject:', err);
+    } finally {
+      setIsSyncing(false);
+    }
+  };
 
-  const deleteSubject = (id) => {
+  const updateSubject = async (id, updates) => {
+    lastLocalActionRef.current = Date.now();
+    clearTimeout(writeTimerRef.current);
+
+    const updatedSubjects = subjects.map((s) => (s.id === id ? { ...s, ...updates, updatedAt: ts() } : s));
+    setSubjects(updatedSubjects);
+
+    try {
+      setIsSyncing(true);
+      await cloudSave({
+        subjects: updatedSubjects,
+        tasks,
+        sessions,
+        templates,
+        snapshots: historicalSnapshots,
+        recycleBin: recycleBinItems,
+      });
+      setLastSaved(new Date());
+    } catch (err) {
+      console.error('Failed to update subject:', err);
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  // Immediate authoritative delete
+  const deleteSubject = async (id) => {
+    lastLocalActionRef.current = Date.now();
+    clearTimeout(writeTimerRef.current);
+
+    const updatedSubjects = subjects.filter((s) => s.id !== id);
+    const updatedTasks = tasks.map((t) => (t.linkedSubjectId === id ? { ...t, linkedSubjectId: null } : t));
+    
+    setSubjects(updatedSubjects);
+    setTasks(updatedTasks);
+
     const existing = subjects.find((s) => s.id === id);
+    let updatedBin = recycleBinItems;
     if (existing) {
       const nowMs = Date.now();
       const binItem = {
@@ -156,23 +217,89 @@ export function AppDataProvider({ children }) {
         deletionTimestamp:  nowMs,
         expirationTimestamp: nowMs + 30 * 24 * 60 * 60 * 1000,
       };
-      setRecycleBinItems((prev) => [binItem, ...prev]);
+      updatedBin = [binItem, ...recycleBinItems];
+      setRecycleBinItems(updatedBin);
     }
-    setSubjects((prev) => prev.filter((s) => s.id !== id));
-    setTasks((prev) => prev.map((t) => (t.linkedSubjectId === id ? { ...t, linkedSubjectId: null } : t)));
+
+    try {
+      setIsSyncing(true);
+      await cloudSave({
+        subjects: updatedSubjects,
+        tasks: updatedTasks,
+        sessions,
+        templates,
+        snapshots: historicalSnapshots,
+        recycleBin: updatedBin,
+      });
+      setLastSaved(new Date());
+    } catch (err) {
+      console.error('Failed to save deleted subject to cloud:', err);
+    } finally {
+      setIsSyncing(false);
+    }
   };
 
   // ── Task methods ───────────────────────────────────────────────────────
-  const addTask = (newTask) =>
-    setTasks((prev) => [{ ...newTask, updatedAt: ts() }, ...prev]);
+  const addTask = async (newTask) => {
+    lastLocalActionRef.current = Date.now();
+    clearTimeout(writeTimerRef.current);
 
-  const toggleTask = (id) =>
-    setTasks((prev) =>
-      prev.map((t) => t.id === id ? { ...t, completed: !t.completed, updatedAt: ts() } : t)
-    );
+    const item = { ...newTask, updatedAt: ts() };
+    const updatedTasks = [item, ...tasks];
+    setTasks(updatedTasks);
 
-  const deleteTask = (id) => {
+    try {
+      setIsSyncing(true);
+      await cloudSave({
+        subjects,
+        tasks: updatedTasks,
+        sessions,
+        templates,
+        snapshots: historicalSnapshots,
+        recycleBin: recycleBinItems,
+      });
+      setLastSaved(new Date());
+    } catch (err) {
+      console.error('Failed to add task:', err);
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  const toggleTask = async (id) => {
+    lastLocalActionRef.current = Date.now();
+    clearTimeout(writeTimerRef.current);
+
+    const updatedTasks = tasks.map((t) => (t.id === id ? { ...t, completed: !t.completed, updatedAt: ts() } : t));
+    setTasks(updatedTasks);
+
+    try {
+      setIsSyncing(true);
+      await cloudSave({
+        subjects,
+        tasks: updatedTasks,
+        sessions,
+        templates,
+        snapshots: historicalSnapshots,
+        recycleBin: recycleBinItems,
+      });
+      setLastSaved(new Date());
+    } catch (err) {
+      console.error('Failed to toggle task:', err);
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  const deleteTask = async (id) => {
+    lastLocalActionRef.current = Date.now();
+    clearTimeout(writeTimerRef.current);
+
     const existing = tasks.find((t) => t.id === id);
+    const updatedTasks = tasks.filter((t) => t.id !== id);
+    setTasks(updatedTasks);
+
+    let updatedBin = recycleBinItems;
     if (existing) {
       const nowMs = Date.now();
       const binItem = {
@@ -183,12 +310,30 @@ export function AppDataProvider({ children }) {
         deletionTimestamp:   nowMs,
         expirationTimestamp: nowMs + 30 * 24 * 60 * 60 * 1000,
       };
-      setRecycleBinItems((prev) => [binItem, ...prev]);
+      updatedBin = [binItem, ...recycleBinItems];
+      setRecycleBinItems(updatedBin);
     }
-    setTasks((prev) => prev.filter((t) => t.id !== id));
+
+    try {
+      setIsSyncing(true);
+      await cloudSave({
+        subjects,
+        tasks: updatedTasks,
+        sessions,
+        templates,
+        snapshots: historicalSnapshots,
+        recycleBin: updatedBin,
+      });
+      setLastSaved(new Date());
+    } catch (err) {
+      console.error('Failed to delete task:', err);
+    } finally {
+      setIsSyncing(false);
+    }
   };
 
-  const carryForwardTasks = (taskIds, targetDateStr = new Date().toISOString().slice(0, 10)) =>
+  const carryForwardTasks = (taskIds, targetDateStr = new Date().toISOString().slice(0, 10)) => {
+    lastLocalActionRef.current = Date.now();
     setTasks((prev) =>
       prev.map((t) =>
         taskIds.includes(t.id)
@@ -196,16 +341,41 @@ export function AppDataProvider({ children }) {
           : t
       )
     );
+  };
 
   // ── Recycle bin ────────────────────────────────────────────────────────
-  const restoreFromBin = (binId) => {
+  const restoreFromBin = async (binId) => {
+    lastLocalActionRef.current = Date.now();
     const binItem = recycleBinItems.find((b) => b.id === binId);
     if (!binItem) return;
-    if (binItem.originalStore === 'subjects')
-      setSubjects((prev) => [...prev, binItem.payload]);
-    else if (binItem.originalStore === 'tasks')
-      setTasks((prev) => [binItem.payload, ...prev]);
-    setRecycleBinItems((prev) => prev.filter((b) => b.id !== binId));
+
+    let updatedSubjects = subjects;
+    let updatedTasks = tasks;
+    const updatedBin = recycleBinItems.filter((b) => b.id !== binId);
+
+    if (binItem.originalStore === 'subjects') {
+      updatedSubjects = [...subjects, binItem.payload];
+      setSubjects(updatedSubjects);
+    } else if (binItem.originalStore === 'tasks') {
+      updatedTasks = [binItem.payload, ...tasks];
+      setTasks(updatedTasks);
+    }
+    setRecycleBinItems(updatedBin);
+
+    try {
+      setIsSyncing(true);
+      await cloudSave({
+        subjects: updatedSubjects,
+        tasks: updatedTasks,
+        sessions,
+        templates,
+        snapshots: historicalSnapshots,
+        recycleBin: updatedBin,
+      });
+      setLastSaved(new Date());
+    } finally {
+      setIsSyncing(false);
+    }
   };
 
   // ── Template methods ───────────────────────────────────────────────────
@@ -224,11 +394,27 @@ export function AppDataProvider({ children }) {
     setTemplates((prev) => prev.filter((t) => t.id !== id));
 
   // ── Session methods ────────────────────────────────────────────────────
-  const addSession = (session) =>
-    setSessions((prev) => {
-      if (prev.some((s) => s.id === session.id)) return prev;
-      return [session, ...prev];
-    });
+  const addSession = async (session) => {
+    lastLocalActionRef.current = Date.now();
+    if (sessions.some((s) => s.id === session.id)) return;
+    const updatedSessions = [session, ...sessions];
+    setSessions(updatedSessions);
+
+    try {
+      setIsSyncing(true);
+      await cloudSave({
+        subjects,
+        tasks,
+        sessions: updatedSessions,
+        templates,
+        snapshots: historicalSnapshots,
+        recycleBin: recycleBinItems,
+      });
+      setLastSaved(new Date());
+    } finally {
+      setIsSyncing(false);
+    }
+  };
 
   const updateSession = (id, updates) =>
     setSessions((prev) =>
@@ -247,12 +433,26 @@ export function AppDataProvider({ children }) {
     );
 
   // ── Backup / Reset ─────────────────────────────────────────────────────
-  const restoreFromJSONBackup = (data) => {
+  const restoreFromJSONBackup = async (data) => {
     if (!data || typeof data !== 'object') throw new Error('Invalid backup file');
-    if (Array.isArray(data.subjects))  setSubjects(data.subjects);
-    if (Array.isArray(data.tasks))     setTasks(data.tasks);
-    if (Array.isArray(data.sessions))  setSessions(data.sessions);
-    if (Array.isArray(data.templates)) setTemplates(data.templates);
+    const newSubjects = Array.isArray(data.subjects) ? data.subjects : [];
+    const newTasks = Array.isArray(data.tasks) ? data.tasks : [];
+    const newSessions = Array.isArray(data.sessions) ? data.sessions : [];
+    const newTemplates = Array.isArray(data.templates) ? data.templates : [];
+
+    setSubjects(newSubjects);
+    setTasks(newTasks);
+    setSessions(newSessions);
+    setTemplates(newTemplates);
+
+    await cloudSave({
+      subjects: newSubjects,
+      tasks: newTasks,
+      sessions: newSessions,
+      templates: newTemplates,
+      snapshots: {},
+      recycleBin: [],
+    });
     return true;
   };
 
@@ -264,7 +464,6 @@ export function AppDataProvider({ children }) {
     setTemplates([]);
     setHistoricalSnapshots({});
     setRecycleBinItems([]);
-    // Immediately wipe cloud too
     await cloudSave(empty);
   };
 
@@ -291,14 +490,13 @@ export function AppDataProvider({ children }) {
         isSyncing,
         lastSaved,
         saveError,
-        cloudConfigured: true,  // always true in pure-cloud mode
+        cloudConfigured: true,
         syncStatus: saveError ? 'error' : isSyncing ? 'syncing' : 'synced',
         lastSyncTime: lastSaved,
 
         // Subject actions
         addSubject,
         updateSubject,
-        archiveSubject,
         deleteSubject,
 
         // Task actions

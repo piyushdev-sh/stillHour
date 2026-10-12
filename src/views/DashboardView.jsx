@@ -58,24 +58,21 @@ export default function DashboardView({ subjects = [], sessions = [], tasks = []
     stopAndSaveTimer,
   } = useTimer();
 
-  // Only use active, non-archived subjects
-  const activeSubjects = subjects.filter((s) => !s.archived);
-
   // Local state for inline quick-start launcher
-  const [selectedSubjectId, setSelectedSubjectId] = useState(activeSubjects[0]?.id || '');
+  const [selectedSubjectId, setSelectedSubjectId] = useState(subjects[0]?.id || '');
   const [selectedTaskId, setSelectedTaskId] = useState('');
   const [durationPreset, setDurationPreset] = useState(25);
 
-  // Automatically keep selectedSubjectId in sync with active subjects
+  // Automatically keep selectedSubjectId in sync with subjects
   useEffect(() => {
-    if (activeSubjects.length > 0) {
-      if (!selectedSubjectId || !activeSubjects.some((s) => s.id === selectedSubjectId)) {
-        setSelectedSubjectId(activeSubjects[0].id);
+    if (subjects.length > 0) {
+      if (!selectedSubjectId || !subjects.some((s) => s.id === selectedSubjectId)) {
+        setSelectedSubjectId(subjects[0].id);
       }
     } else {
       setSelectedSubjectId('');
     }
-  }, [activeSubjects, selectedSubjectId]);
+  }, [subjects, selectedSubjectId]);
 
   // Rotating quote index initialized by day-of-year
   const [quoteIndex, setQuoteIndex] = useState(() => {
@@ -98,9 +95,9 @@ export default function DashboardView({ subjects = [], sessions = [], tasks = []
     0
   );
 
-  // Target calculation from configured active subject targets (or default 120m)
+  // Target calculation from configured subject targets (or default 120m)
   const targetMinutesToday =
-    activeSubjects.reduce((acc, sub) => acc + (sub.dailyTargetMinutes || 0), 0) || 120;
+    subjects.reduce((acc, sub) => acc + (sub.dailyTargetMinutes || 0), 0) || 120;
   const progressPercent = Math.min(
     100,
     Math.round((totalStudiedMinutesToday / targetMinutesToday) * 100)
@@ -134,13 +131,13 @@ export default function DashboardView({ subjects = [], sessions = [], tasks = []
 
   // Handle direct start on dashboard without navigating away
   const handleStartFocus = () => {
-    const chosenSubjectId = selectedSubjectId || activeSubjects[0]?.id;
+    const chosenSubjectId = selectedSubjectId || subjects[0]?.id;
     if (!chosenSubjectId) {
       setCurrentView('subjects');
       return;
     }
 
-    const subObj = activeSubjects.find((s) => s.id === chosenSubjectId);
+    const subObj = subjects.find((s) => s.id === chosenSubjectId);
     const taskObj = tasks.find((t) => t.id === selectedTaskId);
 
     startTimer({
@@ -239,7 +236,7 @@ export default function DashboardView({ subjects = [], sessions = [], tasks = []
           )}
         </div>
 
-        {activeSubjects.length === 0 ? (
+        {subjects.length === 0 ? (
           <EmptyState
             icon={BookOpen}
             title="Create your first subject to start"
@@ -317,7 +314,7 @@ export default function DashboardView({ subjects = [], sessions = [], tasks = []
                   onChange={(e) => setSelectedSubjectId(e.target.value)}
                   className="w-full px-3.5 py-2.5 rounded-xl border border-cream-300 dark:border-charcoal-700 bg-cream-50 dark:bg-charcoal-800 text-espresso-900 dark:text-cream-50 text-sm font-medium focus:ring-2 focus:ring-lilac-400 focus:outline-none transition-colors"
                 >
-                  {activeSubjects.map((sub) => (
+                  {subjects.map((sub) => (
                     <option key={sub.id} value={sub.id}>
                       {sub.name} ({sub.priority})
                     </option>
@@ -528,13 +525,13 @@ export default function DashboardView({ subjects = [], sessions = [], tasks = []
               </button>
             </div>
 
-            {activeSubjects.length === 0 ? (
+            {subjects.length === 0 ? (
               <p className="text-xs text-espresso-500 dark:text-cream-400 py-4 text-center">
                 No subjects defined yet.
               </p>
             ) : (
               <div className="space-y-3">
-                {activeSubjects.map((sub) => {
+                {subjects.map((sub) => {
                   const subMins = eligibleSessionsToday
                     .filter((s) => s.subjectId === sub.id)
                     .reduce((acc, s) => acc + (s.durationMinutes || 0), 0);

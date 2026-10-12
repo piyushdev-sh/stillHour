@@ -99,7 +99,6 @@ function MainRouter() {
     syncStatus,
     addSubject,
     updateSubject,
-    archiveSubject,
     deleteSubject,
     addTask,
     toggleTask,
@@ -138,7 +137,6 @@ function MainRouter() {
             subjects={subjects}
             onAddSubject={addSubject}
             onUpdateSubject={updateSubject}
-            onArchiveSubject={archiveSubject}
             onDeleteSubject={deleteSubject}
           />
         )}

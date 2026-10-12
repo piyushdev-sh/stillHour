@@ -2,12 +2,7 @@ import React, { useState } from 'react';
 import {
   Plus,
   BookOpen,
-  Archive,
-  MoreVertical,
-  CheckCircle2,
   Clock,
-  Sparkles,
-  Edit2,
   Trash2,
 } from 'lucide-react';
 import Card from '../components/common/Card';
@@ -19,11 +14,9 @@ export default function SubjectsView({
   subjects = [],
   onAddSubject,
   onUpdateSubject,
-  onArchiveSubject,
   onDeleteSubject,
 }) {
   const [showAddModal, setShowAddModal] = useState(false);
-  const [filterArchived, setFilterArchived] = useState(false);
 
   // Form state
   const [name, setName] = useState('');
@@ -42,7 +35,6 @@ export default function SubjectsView({
         priority,
         status,
         dailyTargetMinutes: Number(dailyTargetMinutes) || 60,
-        archived: false,
         createdAt: new Date().toISOString(),
       });
     }
@@ -54,7 +46,12 @@ export default function SubjectsView({
     setShowAddModal(false);
   };
 
-  const visibleSubjects = subjects.filter((s) => (filterArchived ? s.archived : !s.archived));
+  const handleDelete = (e, sub) => {
+    e.stopPropagation();
+    if (onDeleteSubject) {
+      onDeleteSubject(sub.id);
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -71,13 +68,6 @@ export default function SubjectsView({
 
         <div className="flex items-center gap-2">
           <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setFilterArchived(!filterArchived)}
-          >
-            {filterArchived ? 'View Active' : 'View Archived'}
-          </Button>
-          <Button
             variant="primary"
             size="sm"
             icon={Plus}
@@ -89,26 +79,22 @@ export default function SubjectsView({
       </div>
 
       {/* Subject list or Empty State */}
-      {visibleSubjects.length === 0 ? (
+      {subjects.length === 0 ? (
         <EmptyState
           icon={BookOpen}
-          title={filterArchived ? 'No archived subjects' : 'No subjects created yet'}
-          description={
-            filterArchived
-              ? 'Archived subjects will be stored here for historical records without cluttering your daily tracker.'
-              : 'stillhour is designed for personal, distraction-free study. Add your subjects to configure daily targets and unlock timer tracking.'
-          }
-          actionLabel={filterArchived ? null : 'Create Your First Subject'}
+          title="No subjects created yet"
+          description="StillHour is designed for personal, distraction-free study. Add your subjects to configure daily targets and unlock timer tracking."
+          actionLabel="Create Your First Subject"
           actionIcon={Plus}
           onAction={() => setShowAddModal(true)}
         />
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {visibleSubjects.map((sub) => (
+          {subjects.map((sub) => (
             <Card key={sub.id} hover className="relative group">
               <div className="flex items-start justify-between gap-2 mb-3">
-                <div>
-                  <h4 className="font-medium text-base text-espresso-900 dark:text-cream-50">
+                <div className="min-w-0 flex-1">
+                  <h4 className="font-medium text-base text-espresso-900 dark:text-cream-50 truncate">
                     {sub.name}
                   </h4>
                   <div className="flex items-center gap-1.5 mt-1.5">
@@ -121,28 +107,14 @@ export default function SubjectsView({
                   </div>
                 </div>
 
-                <div className="flex items-center gap-1">
-                  <button
-                    type="button"
-                    title={sub.archived ? 'Restore subject' : 'Archive subject'}
-                    onClick={() => onArchiveSubject && onArchiveSubject(sub.id)}
-                    className="p-1.5 rounded-lg text-espresso-400 hover:text-espresso-700 dark:hover:text-cream-200 transition-colors"
-                  >
-                    <Archive className="w-4 h-4" />
-                  </button>
-                  <button
-                    type="button"
-                    title="Delete subject"
-                    onClick={() => {
-                      if (window.confirm(`Are you sure you want to delete "${sub.name}"?`)) {
-                        onDeleteSubject && onDeleteSubject(sub.id);
-                      }
-                    }}
-                    className="p-1.5 rounded-lg text-espresso-400 hover:text-rose-600 dark:hover:text-rose-400 transition-colors"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                </div>
+                <button
+                  type="button"
+                  title={`Delete ${sub.name}`}
+                  onClick={(e) => handleDelete(e, sub)}
+                  className="p-2 rounded-xl text-espresso-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 dark:hover:text-rose-400 transition-colors shrink-0"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
               </div>
 
               <div className="pt-3 border-t border-cream-200 dark:border-charcoal-750 flex items-center justify-between text-xs text-espresso-500 dark:text-cream-400">

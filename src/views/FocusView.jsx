@@ -29,25 +29,22 @@ export default function FocusView({ subjects = [], tasks = [] }) {
     stopAndSaveTimer,
   } = useTimer();
 
-  // Only show active, non-archived subjects
-  const activeSubjects = subjects.filter((s) => !s.archived);
-
   // Local selection state for when no timer is running
-  const [selectedSubjectId, setSelectedSubjectId] = useState(activeSubjects[0]?.id || '');
+  const [selectedSubjectId, setSelectedSubjectId] = useState(subjects[0]?.id || '');
   const [selectedTaskId, setSelectedTaskId] = useState('');
   const [durationPreset, setDurationPreset] = useState(25); // minutes
   const [isPomodoro, setIsPomodoro] = useState(false);
 
-  // Keep selectedSubjectId valid if subjects are deleted or archived
+  // Keep selectedSubjectId valid if subjects are deleted
   useEffect(() => {
-    if (activeSubjects.length > 0) {
-      if (!selectedSubjectId || !activeSubjects.some((s) => s.id === selectedSubjectId)) {
-        setSelectedSubjectId(activeSubjects[0].id);
+    if (subjects.length > 0) {
+      if (!selectedSubjectId || !subjects.some((s) => s.id === selectedSubjectId)) {
+        setSelectedSubjectId(subjects[0].id);
       }
     } else {
       setSelectedSubjectId('');
     }
-  }, [activeSubjects, selectedSubjectId]);
+  }, [subjects, selectedSubjectId]);
 
   const presets = [
     { mins: 25, label: '25m' },
@@ -61,13 +58,13 @@ export default function FocusView({ subjects = [], tasks = [] }) {
   const isTimerCompleted = activeTimer && activeTimer.status === 'completed';
 
   const handleStart = () => {
-    const chosenSubjectId = selectedSubjectId || activeSubjects[0]?.id;
+    const chosenSubjectId = selectedSubjectId || subjects[0]?.id;
     if (!chosenSubjectId) {
       alert('Please create and select a subject before starting a study session.');
       return;
     }
 
-    const subObj = activeSubjects.find((s) => s.id === chosenSubjectId);
+    const subObj = subjects.find((s) => s.id === chosenSubjectId);
     const taskObj = tasks.find((t) => t.id === selectedTaskId);
 
     startTimer({
@@ -87,12 +84,12 @@ export default function FocusView({ subjects = [], tasks = [] }) {
 
   const currentSubjectName = isTimerActive
     ? activeTimer.subjectName
-    : activeSubjects.find((s) => s.id === selectedSubjectId)?.name || 'Select subject';
+    : subjects.find((s) => s.id === selectedSubjectId)?.name || 'Select subject';
 
   return (
     <div className="max-w-3xl mx-auto space-y-6">
       {/* Subject Check Warning */}
-      {activeSubjects.length === 0 && (
+      {subjects.length === 0 && (
         <div className="p-4 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900/60 flex items-start gap-3">
           <AlertCircle className="w-5 h-5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
           <div className="flex-1">
@@ -158,13 +155,13 @@ export default function FocusView({ subjects = [], tasks = [] }) {
               <select
                 value={selectedSubjectId}
                 onChange={(e) => setSelectedSubjectId(e.target.value)}
-                disabled={activeSubjects.length === 0}
+                disabled={subjects.length === 0}
                 className="w-full px-3.5 py-2.5 rounded-xl border border-cream-300 dark:border-charcoal-700 bg-cream-50 dark:bg-charcoal-800 text-espresso-900 dark:text-cream-50 text-sm font-medium focus:ring-2 focus:ring-lilac-400 focus:outline-none"
               >
-                {activeSubjects.length === 0 ? (
+                {subjects.length === 0 ? (
                   <option value="">No subjects created</option>
                 ) : (
-                  activeSubjects.map((sub) => (
+                  subjects.map((sub) => (
                     <option key={sub.id} value={sub.id}>
                       {sub.name} ({sub.priority})
                     </option>
@@ -272,7 +269,7 @@ export default function FocusView({ subjects = [], tasks = [] }) {
               variant="primary"
               icon={Play}
               onClick={handleStart}
-              disabled={activeSubjects.length === 0}
+              disabled={subjects.length === 0}
               className="px-8 shadow-md"
             >
               Start Focus Session
