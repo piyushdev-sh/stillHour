@@ -1,5 +1,14 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" fill="none">
-  <rect width="48" height="48" rx="14" fill="#28211E"/>
-  <path d="M12 8H36M12 40H36M14 9C14 18 24 24 24 24C24 24 34 18 34 9M14 39C14 30 24 24 24 24C24 24 34 30 34 39" stroke="#C5B2D4" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
-  <circle cx="24" cy="24" r="2.5" fill="#EFE8DD"/>
+  <!-- Dark rounded rectangle background -->
+  <rect width="48" height="48" rx="12" fill="#111009"/>
+  <!-- Outer ring (slightly inset) -->
+  <circle cx="24" cy="24" r="15" stroke="#3D3530" stroke-width="1.5"/>
+  <!-- Middle ring -->
+  <circle cx="24" cy="24" r="10" stroke="#6B5C4E" stroke-width="1.2"/>
+  <!-- Inner ring -->
+  <circle cx="24" cy="24" r="5.5" stroke="#C5A882" stroke-width="1.2"/>
+  <!-- Center dot — the focal point -->
+  <circle cx="24" cy="24" r="2.2" fill="#F0E6D3"/>
+  <!-- Subtle top gleam on outer ring -->
+  <circle cx="24" cy="9" r="1" fill="#C5A882" opacity="0.5"/>
 </svg>

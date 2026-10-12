@@ -1,6 +1,13 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none">
-  <rect width="512" height="512" rx="112" fill="#26201E"/>
-  <circle cx="256" cy="256" r="160" stroke="#947CB1" stroke-width="20" stroke-dasharray="24 24"/>
-  <circle cx="256" cy="256" r="86" fill="#F0EBF4"/>
-  <circle cx="256" cy="256" r="32" fill="#684E85"/>
+  <rect width="512" height="512" rx="112" fill="#111009"/>
+  <!-- Outer ring -->
+  <circle cx="256" cy="256" r="165" stroke="#3D3530" stroke-width="12"/>
+  <!-- Middle ring -->
+  <circle cx="256" cy="256" r="110" stroke="#6B5C4E" stroke-width="10"/>
+  <!-- Inner ring -->
+  <circle cx="256" cy="256" r="58" stroke="#C5A882" stroke-width="10"/>
+  <!-- Center dot -->
+  <circle cx="256" cy="256" r="24" fill="#F0E6D3"/>
+  <!-- Gleam -->
+  <circle cx="256" cy="91" r="10" fill="#C5A882" opacity="0.4"/>
 </svg>
