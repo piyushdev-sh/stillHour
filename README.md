@@ -1,4 +1,4 @@
-# stillhour · Personal Study Tracker
+# StillHour
 
 A private, calm, and responsive study productivity app for desktop and Android mobile devices, built according to the Antigravity product specification.
 
