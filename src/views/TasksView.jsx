@@ -39,6 +39,8 @@ export default function TasksView({
   const [showTemplateModal, setShowTemplateModal] = useState(false);
   const [dismissCarryForward, setDismissCarryForward] = useState(false);
 
+  const activeSubjects = subjects.filter((s) => !s.archived);
+
   // Form state
   const [title, setTitle] = useState('');
   const [taskType, setTaskType] = useState('checklist'); // 'checklist' | 'timed'
@@ -315,7 +317,7 @@ export default function TasksView({
                     className="w-full px-3 py-2 rounded-xl border border-cream-300 dark:border-charcoal-700 bg-cream-50 dark:bg-charcoal-900 text-espresso-900 dark:text-cream-50 text-xs focus:ring-2 focus:ring-lilac-400 focus:outline-none"
                   >
                     <option value="">No subject</option>
-                    {subjects.map((s) => (
+                    {activeSubjects.map((s) => (
                       <option key={s.id} value={s.id}>
                         {s.name}
                       </option>
@@ -362,7 +364,7 @@ export default function TasksView({
       <ScheduleTemplateModal
         isOpen={showTemplateModal}
         onClose={() => setShowTemplateModal(false)}
-        subjects={subjects}
+        subjects={activeSubjects}
         templates={templates}
         onSaveTemplate={onSaveTemplate}
         onDeleteTemplate={onDeleteTemplate}

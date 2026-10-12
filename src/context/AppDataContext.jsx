@@ -159,6 +159,7 @@ export function AppDataProvider({ children }) {
       setRecycleBinItems((prev) => [binItem, ...prev]);
     }
     setSubjects((prev) => prev.filter((s) => s.id !== id));
+    setTasks((prev) => prev.map((t) => (t.linkedSubjectId === id ? { ...t, linkedSubjectId: null } : t)));
   };
 
   // ── Task methods ───────────────────────────────────────────────────────

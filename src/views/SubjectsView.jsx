@@ -15,7 +15,13 @@ import Button from '../components/common/Button';
 import Badge from '../components/common/Badge';
 import EmptyState from '../components/common/EmptyState';
 
-export default function SubjectsView({ subjects = [], onAddSubject, onUpdateSubject, onArchiveSubject }) {
+export default function SubjectsView({
+  subjects = [],
+  onAddSubject,
+  onUpdateSubject,
+  onArchiveSubject,
+  onDeleteSubject,
+}) {
   const [showAddModal, setShowAddModal] = useState(false);
   const [filterArchived, setFilterArchived] = useState(false);
 
@@ -115,14 +121,28 @@ export default function SubjectsView({ subjects = [], onAddSubject, onUpdateSubj
                   </div>
                 </div>
 
-                <button
-                  type="button"
-                  title="Archive subject"
-                  onClick={() => onArchiveSubject && onArchiveSubject(sub.id)}
-                  className="p-1 rounded-lg text-espresso-400 hover:text-espresso-700 dark:hover:text-cream-200 transition-colors"
-                >
-                  <Archive className="w-4 h-4" />
-                </button>
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    title={sub.archived ? 'Restore subject' : 'Archive subject'}
+                    onClick={() => onArchiveSubject && onArchiveSubject(sub.id)}
+                    className="p-1.5 rounded-lg text-espresso-400 hover:text-espresso-700 dark:hover:text-cream-200 transition-colors"
+                  >
+                    <Archive className="w-4 h-4" />
+                  </button>
+                  <button
+                    type="button"
+                    title="Delete subject"
+                    onClick={() => {
+                      if (window.confirm(`Are you sure you want to delete "${sub.name}"?`)) {
+                        onDeleteSubject && onDeleteSubject(sub.id);
+                      }
+                    }}
+                    className="p-1.5 rounded-lg text-espresso-400 hover:text-rose-600 dark:hover:text-rose-400 transition-colors"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
               </div>
 
               <div className="pt-3 border-t border-cream-200 dark:border-charcoal-750 flex items-center justify-between text-xs text-espresso-500 dark:text-cream-400">

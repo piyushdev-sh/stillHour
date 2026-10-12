@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Clock, Plus, Trash2, Calendar, BookOpen } from 'lucide-react';
 import Button from '../common/Button';
 
@@ -15,6 +15,16 @@ export default function ScheduleTemplateModal({
   const [endTime, setEndTime] = useState('10:30');
   const [selectedSubjectId, setSelectedSubjectId] = useState(subjects[0]?.id || '');
   const [taskSuggestion, setTaskSuggestion] = useState('');
+
+  useEffect(() => {
+    if (subjects.length > 0) {
+      if (!selectedSubjectId || !subjects.some((s) => s.id === selectedSubjectId)) {
+        setSelectedSubjectId(subjects[0].id);
+      }
+    } else {
+      setSelectedSubjectId('');
+    }
+  }, [subjects, selectedSubjectId]);
 
   if (!isOpen) return null;
 
