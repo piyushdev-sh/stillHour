@@ -1,0 +1,94 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * {
+    border-color: #D8CEBC;
+  }
+  .dark * {
+    border-color: #3B3430;
+  }
+
+  html, body, #root {
+    height: 100%;
+    margin: 0;
+    padding: 0;
+  }
+
+  body {
+    background-color: #F5EFEB;
+    color: #28211E;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .dark body {
+    background-color: #161312;
+    color: #F5EFEB;
+  }
+}
+
+/* Reduced motion accessibility support */
+@media (prefers-reduced-motion: reduce) {
+  *, ::before, ::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Custom scrollbars with warm beige styling */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #D8CEBC;
+  border-radius: 9999px;
+}
+.dark ::-webkit-scrollbar-thumb {
+  background: #3B3430;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #C7BAA5;
+}
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: #4A423D;
+}
+
+/* Tabular digits for timers and numbers */
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Visible accessible focus rings */
+:focus-visible {
+  outline: 2px solid #8C739E;
+  outline-offset: 2px;
+}
+.dark :focus-visible {
+  outline: 2px solid #C8B6D8;
+  outline-offset: 2px;
+}
+
+/* Calming Beige Surface styles (No harsh white in light mode) */
+.surface-card {
+  background-color: #EFE8DD;
+  border: 1px solid #D8CEBC;
+}
+.dark .surface-card {
+  background-color: #241F1D;
+  border: 1px solid #3B3430;
+}
+
+.surface-subtle {
+  background-color: #E6DECF;
+}
+.dark .surface-subtle {
+  background-color: #1C1816;
+}
