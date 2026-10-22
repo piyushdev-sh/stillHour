@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { ThemeProvider } from './context/ThemeContext';
 import { NavigationProvider, useNavigation } from './context/NavigationContext';
 import { AppDataProvider, useAppData } from './context/AppDataContext';
@@ -14,6 +14,7 @@ import SettingsView from './views/SettingsView';
 
 import TimerRecoveryModal from './components/timer/TimerRecoveryModal';
 import SwitchTimerConfirmModal from './components/timer/SwitchTimerConfirmModal';
+import ImmersiveLandscapeTimer from './components/timer/ImmersiveLandscapeTimer';
 
 // Cloud loading gate — shown while fetching data on first load
 function CloudLoadingGate({ children }) {
@@ -88,8 +89,6 @@ function CloudLoadingGate({ children }) {
 
   return children;
 }
-
-import ImmersiveLandscapeTimer from './components/timer/ImmersiveLandscapeTimer';
 
 function MainRouter() {
   const { currentView } = useNavigation();
