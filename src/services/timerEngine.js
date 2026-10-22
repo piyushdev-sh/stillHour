@@ -19,6 +19,7 @@ export function createNewTimerSession({
   const plannedDurationSeconds = Math.max(60, Math.floor(durationMinutes * 60));
   const targetEndTimestamp = startTimeMs + plannedDurationSeconds * 1000;
   const sessionId = `sess_${startTimeMs}_${Math.random().toString(36).slice(2, 8)}`;
+  const startISO = new Date(startTimeMs).toISOString();
 
   return {
     sessionId,
@@ -28,13 +29,18 @@ export function createNewTimerSession({
     taskTitle,
     plannedDurationSeconds,
     startTimestamp: startTimeMs,
+    startTimestampISO: startISO,
     targetEndTimestamp,
-    pauses: [], // Array of { pausedAt: number, resumedAt: number | null }
+    pauses: [], // Array of { pausedAt: number, pausedAtISO: string, resumedAt: number | null, resumedAtISO: string | null }
     currentPauseStart: null,
     status: 'running', // 'running' | 'paused' | 'completed' | 'idle'
     lastTickTimestamp: startTimeMs,
     isSaved: false,
-    date: new Date(startTimeMs).toISOString().slice(0, 10),
+    date: startISO.slice(0, 10),
+    recoveryEvents: [],
+    completionReason: null,
+    createdAt: startISO,
+    updatedAt: startISO,
   };
 }
 
@@ -84,14 +90,43 @@ export function getElapsedStudySeconds(timerState, nowMs = Date.now()) {
 }
 
 /**
+ * Strictly calculates net elapsed study time in seconds from timestamps and pause intervals.
+ * Excludes all pause durations from focused study time.
+ */
+export function calculateNetStudySeconds(startTimestamp, endTimestamp, pauses = [], plannedDurationSeconds = Infinity) {
+  if (!startTimestamp || !endTimestamp || endTimestamp <= startTimestamp) return 0;
+
+  let totalPauseMs = 0;
+  for (const interval of pauses) {
+    const pStart = interval.pausedAt;
+    const pEnd = interval.resumedAt || endTimestamp;
+    if (pEnd > pStart) {
+      // Clip pause interval to [startTimestamp, endTimestamp]
+      const effectiveStart = Math.max(startTimestamp, pStart);
+      const effectiveEnd = Math.min(endTimestamp, pEnd);
+      if (effectiveEnd > effectiveStart) {
+        totalPauseMs += (effectiveEnd - effectiveStart);
+      }
+    }
+  }
+
+  const grossElapsedMs = Math.max(0, endTimestamp - startTimestamp);
+  const netElapsedMs = Math.max(0, grossElapsedMs - totalPauseMs);
+  const calculatedSeconds = Math.floor(netElapsedMs / 1000);
+
+  return Math.min(plannedDurationSeconds, calculatedSeconds);
+}
+
+/**
  * Transitions timer into 'paused' state
  */
 export function pauseTimerState(timerState, nowMs = Date.now()) {
   if (!timerState || timerState.status !== 'running') return timerState;
 
+  const nowISO = new Date(nowMs).toISOString();
   const updatedPauses = [
     ...(timerState.pauses || []),
-    { pausedAt: nowMs, resumedAt: null },
+    { pausedAt: nowMs, pausedAtISO: nowISO, resumedAt: null, resumedAtISO: null },
   ];
 
   return {
@@ -100,6 +135,7 @@ export function pauseTimerState(timerState, nowMs = Date.now()) {
     currentPauseStart: nowMs,
     lastTickTimestamp: nowMs,
     pauses: updatedPauses,
+    updatedAt: nowISO,
   };
 }
 
@@ -111,12 +147,17 @@ export function resumeTimerState(timerState, nowMs = Date.now()) {
     return timerState;
   }
 
+  const nowISO = new Date(nowMs).toISOString();
   const pauseDurationMs = Math.max(0, nowMs - timerState.currentPauseStart);
   const updatedTargetEnd = timerState.targetEndTimestamp + pauseDurationMs;
 
   const updatedPauses = (timerState.pauses || []).map((p, idx, arr) => {
     if (idx === arr.length - 1 && p.resumedAt === null) {
-      return { ...p, resumedAt: nowMs };
+      return {
+        ...p,
+        resumedAt: nowMs,
+        resumedAtISO: nowISO,
+      };
     }
     return p;
   });
@@ -128,6 +169,7 @@ export function resumeTimerState(timerState, nowMs = Date.now()) {
     currentPauseStart: null,
     lastTickTimestamp: nowMs,
     pauses: updatedPauses,
+    updatedAt: nowISO,
   };
 }
 
@@ -153,15 +195,43 @@ export function tickTimerState(timerState, nowMs = Date.now()) {
 }
 
 /**
- * Finalizes session record for saving to IndexedDB / state
+ * Finalizes session record for saving to data store with comprehensive audit trail.
  */
-export function finalizeSessionRecord(timerState, nowMs = Date.now()) {
+export function finalizeSessionRecord(timerState, nowMs = Date.now(), reason = null) {
   if (!timerState) return null;
 
-  const actualDurationSeconds = Math.min(
-    timerState.plannedDurationSeconds,
-    getElapsedStudySeconds(timerState, nowMs)
+  const endMs =
+    timerState.status === 'paused' && timerState.currentPauseStart
+      ? timerState.currentPauseStart
+      : timerState.status === 'completed'
+      ? Math.min(nowMs, timerState.targetEndTimestamp)
+      : nowMs;
+
+  const nowISO = new Date(nowMs).toISOString();
+  const startISO = timerState.startTimestampISO || new Date(timerState.startTimestamp).toISOString();
+  const endISO = new Date(endMs).toISOString();
+
+  // Normalize pauses to ensure ISO strings exist for auditable records
+  const normalizedPauses = (timerState.pauses || []).map((p) => ({
+    pausedAt: p.pausedAt,
+    pausedAtISO: p.pausedAtISO || new Date(p.pausedAt).toISOString(),
+    resumedAt: p.resumedAt || (timerState.status === 'paused' ? endMs : p.pausedAt),
+    resumedAtISO: p.resumedAtISO || (p.resumedAt ? new Date(p.resumedAt).toISOString() : endISO),
+  }));
+
+  const actualDurationSeconds = calculateNetStudySeconds(
+    timerState.startTimestamp,
+    endMs,
+    normalizedPauses,
+    timerState.plannedDurationSeconds
   );
+
+  const determinedReason =
+    reason ||
+    timerState.completionReason ||
+    (timerState.status === 'completed' || nowMs >= timerState.targetEndTimestamp
+      ? 'timer_completed'
+      : 'manual_stop');
 
   return {
     id: timerState.sessionId,
@@ -173,12 +243,18 @@ export function finalizeSessionRecord(timerState, nowMs = Date.now()) {
     durationSeconds: actualDurationSeconds,
     durationMinutes: Math.round(actualDurationSeconds / 60),
     startTimestamp: timerState.startTimestamp,
-    endTimestamp: nowMs,
-    pauses: timerState.pauses || [],
-    date: timerState.date || new Date(nowMs).toISOString().slice(0, 10),
+    startTimestampISO: startISO,
+    endTimestamp: endMs,
+    endTimestampISO: endISO,
+    pauses: normalizedPauses,
+    recoveryEvents: timerState.recoveryEvents || [],
+    completionReason: determinedReason,
+    notes: timerState.notes || '',
+    date: timerState.date || startISO.slice(0, 10),
     completed: true,
-    savedAt: new Date(nowMs).toISOString(),
     isEligible: actualDurationSeconds >= 60,
+    createdAt: timerState.createdAt || startISO,
+    savedAt: nowISO,
   };
 }
 

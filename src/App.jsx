@@ -89,6 +89,8 @@ function CloudLoadingGate({ children }) {
   return children;
 }
 
+import ImmersiveLandscapeTimer from './components/timer/ImmersiveLandscapeTimer';
+
 function MainRouter() {
   const { currentView } = useNavigation();
   const {
@@ -97,6 +99,8 @@ function MainRouter() {
     sessions,
     recycleBinItems,
     syncStatus,
+    settings,
+    updateSettings,
     addSubject,
     updateSubject,
     deleteSubject,
@@ -116,6 +120,9 @@ function MainRouter() {
   } = useAppData();
 
   const {
+    activeTimer,
+    isLandscapeMode,
+    setIsLandscapeMode,
     pendingRecovery,
     resolveRecovery,
     pendingSwitch,
@@ -123,8 +130,28 @@ function MainRouter() {
     cancelSwitch,
   } = useTimer();
 
+  // Automatically activate StandBy landscape display when device is rotated horizontally during active session
+  useEffect(() => {
+    const checkOrientation = () => {
+      const isLandscape = window.innerWidth > window.innerHeight && window.innerHeight < 600;
+      if (isLandscape && activeTimer && (activeTimer.status === 'running' || activeTimer.status === 'paused')) {
+        setIsLandscapeMode(true);
+      }
+    };
+
+    window.addEventListener('resize', checkOrientation);
+    window.addEventListener('orientationchange', checkOrientation);
+    return () => {
+      window.removeEventListener('resize', checkOrientation);
+      window.removeEventListener('orientationchange', checkOrientation);
+    };
+  }, [activeTimer, setIsLandscapeMode]);
+
   return (
     <>
+      {isLandscapeMode && activeTimer && (
+        <ImmersiveLandscapeTimer onClose={() => setIsLandscapeMode(false)} />
+      )}
       <AppShell>
         {currentView === 'dashboard' && (
           <DashboardView subjects={subjects} sessions={sessions} tasks={tasks} />
@@ -165,6 +192,8 @@ function MainRouter() {
             subjects={subjects}
             sessions={sessions}
             tasks={tasks}
+            settings={settings}
+            onUpdateSettings={updateSettings}
             onResetAllData={resetAllData}
             recycleBinItems={recycleBinItems}
             onRestoreFromBin={restoreFromBin}

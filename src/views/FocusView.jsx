@@ -9,6 +9,7 @@ import {
   BookOpen,
   Sparkles,
   Award,
+  Maximize2,
 } from 'lucide-react';
 import Card from '../components/common/Card';
 import Button from '../components/common/Button';
@@ -23,6 +24,8 @@ export default function FocusView({ subjects = [], tasks = [] }) {
     activeTimer,
     remainingSeconds,
     elapsedStudySeconds,
+    setIsLandscapeMode,
+    isCloudTimerSynced,
     startTimer,
     pauseTimer,
     resumeTimer,
@@ -135,9 +138,32 @@ export default function FocusView({ subjects = [], tasks = [] }) {
       )}
 
       {/* Main Focus Card */}
-      <Card className="text-center py-10 px-6 sm:px-12 relative overflow-hidden">
+      <Card className="text-center py-8 px-6 sm:px-12 relative overflow-hidden">
         {/* Subtle decorative aura */}
         <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-80 h-80 bg-lilac-200/30 dark:bg-lilac-900/10 rounded-full blur-3xl pointer-events-none"></div>
+
+        {/* Top Header Row inside Card: Multi-Device Sync & Fullscreen StandBy */}
+        <div className="relative z-10 flex items-center justify-between mb-6 pb-3 border-b border-cream-200/60 dark:border-charcoal-750">
+          <div className="flex items-center gap-1.5 text-xs font-mono text-espresso-500 dark:text-cream-400">
+            <span
+              className={`w-2 h-2 rounded-full ${
+                activeTimer?.status === 'running'
+                  ? 'bg-emerald-500 animate-pulse'
+                  : 'bg-emerald-400'
+              }`}
+            />
+            <span>{isCloudTimerSynced ? 'Universal Sync: One Timer Everywhere' : 'Offline Mode'}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setIsLandscapeMode(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium text-espresso-700 dark:text-cream-200 bg-cream-100 hover:bg-cream-200 dark:bg-charcoal-800 dark:hover:bg-charcoal-750 border border-cream-200 dark:border-charcoal-700 transition-colors"
+            title="Expand to Fullscreen StandBy Landscape Display"
+          >
+            <Maximize2 className="w-3.5 h-3.5" />
+            <span>StandBy Display</span>
+          </button>
+        </div>
 
         {/* Configuration Bar: Subject & Task Selector */}
         <div className="relative z-10 flex flex-col sm:flex-row items-center justify-center gap-3 mb-6 max-w-xl mx-auto">

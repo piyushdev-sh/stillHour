@@ -17,6 +17,7 @@ import {
   RefreshCw,
   CheckSquare,
   Check,
+  Maximize2,
 } from 'lucide-react';
 import Card from '../components/common/Card';
 import Button from '../components/common/Button';
@@ -52,6 +53,7 @@ export default function DashboardView({ subjects = [], sessions = [], tasks = []
     activeTimer,
     remainingSeconds,
     elapsedStudySeconds,
+    setIsLandscapeMode,
     startTimer,
     pauseTimer,
     resumeTimer,
@@ -297,6 +299,14 @@ export default function DashboardView({ subjects = [], sessions = [], tasks = []
                 onClick={() => stopAndSaveTimer(false)}
               >
                 Stop & Save
+              </Button>
+              <Button
+                size="md"
+                variant="ghost"
+                icon={Maximize2}
+                onClick={() => setIsLandscapeMode(true)}
+              >
+                StandBy Mode
               </Button>
             </div>
           </div>

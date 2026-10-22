@@ -30,40 +30,70 @@ export default function SettingsView({
   subjects = [],
   sessions = [],
   tasks = [],
+  settings = {},
+  onUpdateSettings,
   onResetAllData,
   recycleBinItems = [],
   onRestoreFromBin,
   syncStatus = 'synced',
   onManualSync,
+  onRestoreBackup,
 }) {
   const { theme, setTheme } = useTheme();
   const { cloudConfigured, lastSyncTime, syncWithCloud } = useAppData();
 
-  // Settings State
-  const [weeklyTargetHours, setWeeklyTargetHours] = useState(15);
-  const [correctionWindowMinutes, setCorrectionWindowMinutes] = useState(15);
-  const [carryForwardUnfinished, setCarryForwardUnfinished] = useState(true);
-  const [idleWarningEnabled, setIdleWarningEnabled] = useState(true);
-  const [restDays, setRestDays] = useState(['Sunday']);
+  // Settings State synced with cloud
+  const [weeklyTargetHours, setWeeklyTargetHours] = useState(settings?.weeklyTargetHours || 15);
+  const [correctionWindowMinutes, setCorrectionWindowMinutes] = useState(settings?.correctionWindowMinutes || 15);
+  const [carryForwardUnfinished, setCarryForwardUnfinished] = useState(settings?.carryForwardUnfinished ?? true);
+  const [idleWarningEnabled, setIdleWarningEnabled] = useState(settings?.idleWarningEnabled ?? true);
+  const [restDays, setRestDays] = useState(settings?.restDays || ['Sunday']);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [acknowledgedBackup, setAcknowledgedBackup] = useState(false);
   const [showRecycleBin, setShowRecycleBin] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
 
+  useEffect(() => {
+    if (settings) {
+      if (settings.weeklyTargetHours !== undefined) setWeeklyTargetHours(settings.weeklyTargetHours);
+      if (settings.correctionWindowMinutes !== undefined) setCorrectionWindowMinutes(settings.correctionWindowMinutes);
+      if (settings.carryForwardUnfinished !== undefined) setCarryForwardUnfinished(settings.carryForwardUnfinished);
+      if (settings.idleWarningEnabled !== undefined) setIdleWarningEnabled(settings.idleWarningEnabled);
+      if (settings.restDays !== undefined) setRestDays(settings.restDays);
+    }
+  }, [settings]);
+
   const daysOfWeek = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 
   const toggleRestDay = (day) => {
-    if (restDays.includes(day)) {
-      setRestDays(restDays.filter((d) => d !== day));
-    } else {
-      setRestDays([...restDays, day]);
-    }
+    const updated = restDays.includes(day)
+      ? restDays.filter((d) => d !== day)
+      : [...restDays, day];
+    setRestDays(updated);
+    if (onUpdateSettings) onUpdateSettings({ restDays: updated });
+  };
+
+  const handleWeeklyTargetChange = (val) => {
+    const num = Number(val);
+    setWeeklyTargetHours(num);
+    if (onUpdateSettings) onUpdateSettings({ weeklyTargetHours: num });
+  };
+
+  const handleCorrectionWindowChange = (val) => {
+    const num = Number(val);
+    setCorrectionWindowMinutes(num);
+    if (onUpdateSettings) onUpdateSettings({ correctionWindowMinutes: num });
+  };
+
+  const handleCarryForwardChange = (checked) => {
+    setCarryForwardUnfinished(checked);
+    if (onUpdateSettings) onUpdateSettings({ carryForwardUnfinished: checked });
   };
 
   const handleExportBackup = () => {
     const data = {
       app: 'stillhour',
-      version: '1.0.0',
+      version: '2.0.0',
       exportedAt: new Date().toISOString(),
       subjects,
       tasks,
@@ -72,8 +102,10 @@ export default function SettingsView({
         weeklyTargetHours,
         correctionWindowMinutes,
         carryForwardUnfinished,
+        idleWarningEnabled,
         restDays,
       },
+      recycleBin: recycleBinItems,
     };
 
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
@@ -85,17 +117,58 @@ export default function SettingsView({
     URL.revokeObjectURL(url);
   };
 
+  const handleExportCSV = () => {
+    const headers = [
+      'Session ID',
+      'Date',
+      'Subject',
+      'Task',
+      'Planned Minutes',
+      'Net Study Minutes',
+      'Duration Seconds',
+      'Start Time (UTC)',
+      'End Time (UTC)',
+      'Pauses Count',
+      'Completion Reason',
+      'Eligible',
+    ];
+
+    const rows = sessions.map((s) => [
+      `"${s.id || ''}"`,
+      `"${s.date || ''}"`,
+      `"${(s.subjectName || '').replace(/"/g, '""')}"`,
+      `"${(s.taskTitle || '').replace(/"/g, '""')}"`,
+      Math.round((s.plannedDurationSeconds || 0) / 60),
+      s.durationMinutes || Math.round((s.durationSeconds || 0) / 60),
+      s.durationSeconds || 0,
+      `"${s.startTimestampISO || (s.startTimestamp ? new Date(s.startTimestamp).toISOString() : '')}"`,
+      `"${s.endTimestampISO || (s.endTimestamp ? new Date(s.endTimestamp).toISOString() : '')}"`,
+      Array.isArray(s.pauses) ? s.pauses.length : 0,
+      `"${s.completionReason || 'manual_stop'}"`,
+      s.isEligible ? 'Yes' : 'No',
+    ]);
+
+    const csvContent = [headers.join(','), ...rows.map((r) => r.join(','))].join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `stillhour-sessions-audit-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   const handleFileRestore = (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
     const reader = new FileReader();
-    reader.onload = (event) => {
+    reader.onload = async (event) => {
       try {
         const parsed = JSON.parse(event.target?.result);
         if (onRestoreBackup) {
-          onRestoreBackup(parsed);
-          alert('Backup restored successfully!');
+          await onRestoreBackup(parsed);
+          alert('Backup restored successfully and synced to your cloud account!');
         }
       } catch (err) {
         alert('Failed to parse backup file: ' + err.message);
@@ -175,7 +248,7 @@ export default function SettingsView({
                 min="1"
                 max="100"
                 value={weeklyTargetHours}
-                onChange={(e) => setWeeklyTargetHours(e.target.value)}
+                onChange={(e) => handleWeeklyTargetChange(e.target.value)}
                 className="w-full px-3.5 py-2 rounded-xl border border-cream-300 dark:border-charcoal-700 bg-cream-50 dark:bg-charcoal-900 text-espresso-900 dark:text-cream-50 text-sm focus:ring-2 focus:ring-lilac-400 focus:outline-none"
               />
               <span className="text-[11px] text-espresso-400 dark:text-cream-400 mt-1 block">
@@ -192,7 +265,7 @@ export default function SettingsView({
                 min="5"
                 max="60"
                 value={correctionWindowMinutes}
-                onChange={(e) => setCorrectionWindowMinutes(e.target.value)}
+                onChange={(e) => handleCorrectionWindowChange(e.target.value)}
                 className="w-full px-3.5 py-2 rounded-xl border border-cream-300 dark:border-charcoal-700 bg-cream-50 dark:bg-charcoal-900 text-espresso-900 dark:text-cream-50 text-sm focus:ring-2 focus:ring-lilac-400 focus:outline-none"
               />
               <span className="text-[11px] text-espresso-400 dark:text-cream-400 mt-1 block">
@@ -240,7 +313,7 @@ export default function SettingsView({
             <input
               type="checkbox"
               checked={carryForwardUnfinished}
-              onChange={(e) => setCarryForwardUnfinished(e.target.checked)}
+              onChange={(e) => handleCarryForwardChange(e.target.checked)}
               className="w-4 h-4 rounded text-lilac-600 focus:ring-lilac-400 border-cream-300 dark:border-charcoal-700"
             />
           </div>
@@ -325,20 +398,28 @@ export default function SettingsView({
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-2 pb-4 border-b border-cream-200 dark:border-charcoal-750">
           <div>
             <span className="text-xs font-semibold text-espresso-800 dark:text-cream-100 block">
-              Complete JSON Migration & Backup
+              Complete JSON Migration & Audit CSV
             </span>
             <span className="text-[11px] text-espresso-500 dark:text-cream-400">
-              Export full app dataset or restore from a previous JSON backup file.
+              Export full app dataset, detailed session CSV audit, or restore from a JSON backup.
             </span>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <Button
               size="sm"
               variant="secondary"
               icon={Download}
               onClick={handleExportBackup}
             >
-              Export
+              Export JSON
+            </Button>
+            <Button
+              size="sm"
+              variant="secondary"
+              icon={Download}
+              onClick={handleExportCSV}
+            >
+              Export CSV
             </Button>
             <label className="cursor-pointer">
               <input

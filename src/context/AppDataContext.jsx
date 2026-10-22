@@ -26,6 +26,13 @@ export function AppDataProvider({ children }) {
   const [templates,           setTemplates]           = useState([]);
   const [historicalSnapshots, setHistoricalSnapshots] = useState({});
   const [recycleBinItems,     setRecycleBinItems]     = useState([]);
+  const [settings,            setSettings]            = useState({
+    weeklyTargetHours: 15,
+    correctionWindowMinutes: 15,
+    carryForwardUnfinished: true,
+    idleWarningEnabled: true,
+    restDays: ['Sunday'],
+  });
 
   // ── Sync meta ──────────────────────────────────────────────────────────
   const [isSyncing,  setIsSyncing]  = useState(false);
@@ -34,7 +41,7 @@ export function AppDataProvider({ children }) {
 
   // Keep a ref to always-current state for the debounced writer
   const stateRef = useRef({});
-  stateRef.current = { subjects, tasks, sessions, templates, historicalSnapshots, recycleBinItems };
+  stateRef.current = { subjects, tasks, sessions, templates, historicalSnapshots, recycleBinItems, settings };
 
   // Timestamp of the most recent user action (prevents re-fetch race conditions)
   const lastLocalActionRef = useRef(0);
@@ -59,6 +66,9 @@ export function AppDataProvider({ children }) {
         setTemplates(          Array.isArray(data.templates)    ? data.templates  : []);
         setHistoricalSnapshots(typeof data.snapshots === 'object' && data.snapshots ? data.snapshots : {});
         setRecycleBinItems(    Array.isArray(data.recycleBin)   ? data.recycleBin : []);
+        if (data.settings && typeof data.settings === 'object') {
+          setSettings((prev) => ({ ...prev, ...data.settings }));
+        }
 
         isLoadedRef.current = true;
         setLoadState('ready');
@@ -94,6 +104,9 @@ export function AppDataProvider({ children }) {
       setTemplates(          Array.isArray(data.templates)    ? data.templates  : []);
       setHistoricalSnapshots(typeof data.snapshots === 'object' && data.snapshots ? data.snapshots : {});
       setRecycleBinItems(    Array.isArray(data.recycleBin)   ? data.recycleBin : []);
+      if (data.settings && typeof data.settings === 'object') {
+        setSettings((prev) => ({ ...prev, ...data.settings }));
+      }
       setLastSaved(new Date());
       setSaveError(null);
     } catch (err) {
@@ -432,32 +445,64 @@ export function AppDataProvider({ children }) {
       })
     );
 
+  // ── Settings methods ───────────────────────────────────────────────────
+  const updateSettings = async (updates) => {
+    lastLocalActionRef.current = Date.now();
+    clearTimeout(writeTimerRef.current);
+    const updatedSettings = { ...settings, ...updates };
+    setSettings(updatedSettings);
+
+    try {
+      setIsSyncing(true);
+      await cloudSave({
+        subjects,
+        tasks,
+        sessions,
+        templates,
+        snapshots: historicalSnapshots,
+        recycleBin: recycleBinItems,
+        settings: updatedSettings,
+      });
+      setLastSaved(new Date());
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
   // ── Backup / Reset ─────────────────────────────────────────────────────
   const restoreFromJSONBackup = async (data) => {
     if (!data || typeof data !== 'object') throw new Error('Invalid backup file');
-    const newSubjects = Array.isArray(data.subjects) ? data.subjects : [];
-    const newTasks = Array.isArray(data.tasks) ? data.tasks : [];
-    const newSessions = Array.isArray(data.sessions) ? data.sessions : [];
-    const newTemplates = Array.isArray(data.templates) ? data.templates : [];
+    const source = data.data && typeof data.data === 'object' ? data.data : data;
+    const newSubjects = Array.isArray(source.subjects) ? source.subjects : [];
+    const newTasks = Array.isArray(source.tasks) ? source.tasks : [];
+    const newSessions = Array.isArray(source.sessions) ? source.sessions : [];
+    const newTemplates = Array.isArray(source.templates) ? source.templates : [];
+    const newSettings = source.settings && typeof source.settings === 'object' ? source.settings : settings;
+    const newSnapshots = typeof source.snapshots === 'object' && source.snapshots ? source.snapshots : {};
+    const newRecycleBin = Array.isArray(source.recycleBin) ? source.recycleBin : [];
 
     setSubjects(newSubjects);
     setTasks(newTasks);
     setSessions(newSessions);
     setTemplates(newTemplates);
+    setSettings(newSettings);
+    setHistoricalSnapshots(newSnapshots);
+    setRecycleBinItems(newRecycleBin);
 
     await cloudSave({
       subjects: newSubjects,
       tasks: newTasks,
       sessions: newSessions,
       templates: newTemplates,
-      snapshots: {},
-      recycleBin: [],
+      snapshots: newSnapshots,
+      recycleBin: newRecycleBin,
+      settings: newSettings,
     });
     return true;
   };
 
   const resetAllData = async () => {
-    const empty = { subjects: [], tasks: [], sessions: [], templates: [], snapshots: {}, recycleBin: [] };
+    const empty = { subjects: [], tasks: [], sessions: [], templates: [], snapshots: {}, recycleBin: [], settings: {} };
     setSubjects([]);
     setTasks([]);
     setSessions([]);
@@ -485,6 +530,7 @@ export function AppDataProvider({ children }) {
         templates,
         historicalSnapshots,
         recycleBinItems,
+        settings,
 
         // Sync meta
         isSyncing,
@@ -515,6 +561,9 @@ export function AppDataProvider({ children }) {
         // Sessions
         addSession,
         updateSession,
+
+        // Settings
+        updateSettings,
 
         // Sync
         syncWithCloud,

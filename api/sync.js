@@ -50,6 +50,7 @@ const EMPTY_DB = {
   templates: [],
   snapshots: {},
   recycleBin: [],
+  settings: {},
   updatedAt: null,
 };
 
@@ -104,8 +105,9 @@ export default async function handler(req, res) {
       tasks:      Array.isArray(fullState.tasks)       ? fullState.tasks      : [],
       sessions:   Array.isArray(fullState.sessions)    ? fullState.sessions   : [],
       templates:  Array.isArray(fullState.templates)   ? fullState.templates  : [],
-      snapshots:  typeof fullState.snapshots === 'object' ? fullState.snapshots : {},
+      snapshots:  typeof fullState.snapshots === 'object' && fullState.snapshots !== null ? fullState.snapshots : {},
       recycleBin: Array.isArray(fullState.recycleBin)  ? fullState.recycleBin : [],
+      settings:   typeof fullState.settings === 'object' && fullState.settings !== null ? fullState.settings : {},
       updatedAt:  new Date().toISOString(),
     };
 

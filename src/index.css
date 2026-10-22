@@ -92,3 +92,17 @@
 .dark .surface-subtle {
   background-color: #1C1816;
 }
+
+/* Safe-area utilities for mobile phones and landscape StandBy mode */
+.pt-safe {
+  padding-top: max(env(safe-area-inset-top, 0px), 1rem);
+}
+.pb-safe {
+  padding-bottom: max(env(safe-area-inset-bottom, 0px), 1rem);
+}
+.pl-safe {
+  padding-left: max(env(safe-area-inset-left, 0px), 1.5rem);
+}
+.pr-safe {
+  padding-right: max(env(safe-area-inset-right, 0px), 1.5rem);
+}

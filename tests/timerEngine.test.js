@@ -8,6 +8,7 @@ import {
   tickTimerState,
   finalizeSessionRecord,
   checkRecoveryNeeded,
+  calculateNetStudySeconds,
 } from '../src/services/timerEngine.js';
 
 describe('Phase 2: Timer Engine & Spec Rules Compliance', () => {
@@ -153,5 +154,60 @@ describe('Phase 2: Timer Engine & Spec Rules Compliance', () => {
 
     expect(remaining).toBe(3600);
     expect(elapsed).toBe(3600);
+  });
+
+  it('strictly calculates net study seconds from timestamps excluding multiple pause intervals', () => {
+    const startMs = 1700000000000;
+    const endMs = startMs + 1800 * 1000; // 30 minutes total elapsed (1800s)
+
+    // Pause 1: from minute 5 to 8 (3 minutes = 180s)
+    // Pause 2: from minute 15 to 17 (2 minutes = 120s)
+    // Total paused: 300s. Net study: 1800 - 300 = 1500s (25 minutes).
+    const pauses = [
+      { pausedAt: startMs + 300 * 1000, resumedAt: startMs + 480 * 1000 },
+      { pausedAt: startMs + 900 * 1000, resumedAt: startMs + 1020 * 1000 },
+    ];
+
+    const netSeconds = calculateNetStudySeconds(startMs, endMs, pauses, 1800);
+    expect(netSeconds).toBe(1500);
+  });
+
+  it('generates fully auditable session record with ISO 8601 strings and completion reason', () => {
+    let session = createNewTimerSession({
+      subjectId: 'sub_audit_test',
+      subjectName: 'Advanced Algorithms',
+      durationMinutes: 45,
+      startTimeMs: mockStartTime,
+    });
+
+    // Verify session creation has ISO strings
+    expect(session.startTimestampISO).toBe(new Date(mockStartTime).toISOString());
+    expect(session.date).toBe(new Date(mockStartTime).toISOString().slice(0, 10));
+
+    // Pause at minute 10
+    const pauseMs = mockStartTime + 600 * 1000;
+    session = pauseTimerState(session, pauseMs);
+    expect(session.pauses[0].pausedAtISO).toBe(new Date(pauseMs).toISOString());
+
+    // Resume at minute 12
+    const resumeMs = mockStartTime + 720 * 1000;
+    session = resumeTimerState(session, resumeMs);
+    expect(session.pauses[0].resumedAtISO).toBe(new Date(resumeMs).toISOString());
+
+    // Complete session at minute 25
+    const stopMs = mockStartTime + 1500 * 1000;
+    const finalized = finalizeSessionRecord(session, stopMs, 'manual_stop');
+
+    expect(finalized.startTimestampISO).toBe(new Date(mockStartTime).toISOString());
+    expect(finalized.endTimestampISO).toBe(new Date(stopMs).toISOString());
+    expect(finalized.completionReason).toBe('manual_stop');
+    expect(finalized.pauses).toHaveLength(1);
+    expect(finalized.pauses[0].pausedAtISO).toBe(new Date(pauseMs).toISOString());
+    expect(finalized.pauses[0].resumedAtISO).toBe(new Date(resumeMs).toISOString());
+
+    // Total gross: 1500s. Pause: 120s. Net: 1380s.
+    expect(finalized.durationSeconds).toBe(1380);
+    expect(finalized.durationMinutes).toBe(23);
+    expect(finalized.isEligible).toBe(true);
   });
 });

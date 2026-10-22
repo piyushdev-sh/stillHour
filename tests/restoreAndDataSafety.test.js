@@ -64,4 +64,27 @@ describe('Phase 6: Data Safety, Restore Workflows & Idempotency', () => {
     expect(performDestructiveReset(acknowledgedBackup)).toBe(true);
     expect(resetAllowed).toBe(true);
   });
+
+  it('verifies real production backup contains 5 subjects and 5 historical sessions totaling 420 minutes', async () => {
+    const fs = await import('fs');
+    const path = await import('path');
+    const backupPath = path.resolve(__dirname, '../backups/production_backup_2026-10-22.json');
+
+    expect(fs.existsSync(backupPath)).toBe(true);
+    const content = fs.readFileSync(backupPath, 'utf-8');
+    const parsed = JSON.parse(content);
+    const backup = parsed.data || parsed;
+
+    expect(backup.subjects).toHaveLength(5);
+    const subjectNames = backup.subjects.map((s) => s.name);
+    expect(subjectNames).toContain('MATH');
+    expect(subjectNames).toContain('CORE CS');
+    expect(subjectNames).toContain('REASONING');
+    expect(subjectNames).toContain('HINDI');
+    expect(subjectNames).toContain('ENGLISH');
+
+    expect(backup.sessions).toHaveLength(5);
+    const totalMinutes = backup.sessions.reduce((acc, s) => acc + (s.durationMinutes || 0), 0);
+    expect(totalMinutes).toBe(420);
+  });
 });
